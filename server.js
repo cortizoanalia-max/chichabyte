@@ -263,7 +263,7 @@ async function handleSave(req, res) {
 
 // -------------------------------------------------------------- servidor
 
-const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml" };
+const MIME = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".png": "image/png", ".svg": "image/svg+xml", ".json": "application/json", ".webmanifest": "application/manifest+json" };
 
 const server = http.createServer(async (req, res) => {
   try {
