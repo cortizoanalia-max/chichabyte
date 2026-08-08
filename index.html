@@ -1,0 +1,365 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chichabyte · Registro de gastos por ticket</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Familjen+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+
+<style>
+  :root{
+    --ground:#0A0B0E;
+    --recess:#141519;
+    --ink:#F3F1E9;
+    --ink-soft:#8C8F98;
+    --hair:#2B2D34;
+    --hair-soft:#1D1F25;
+    --tape:#F6F3E8;
+    --stamp:#FF4FA0;
+    --sea:#33E6C8;
+    --ochre:#D6FF3D;
+    --amber:#FFB33D;
+    --alarm:#FF5F56;
+    --display:"Familjen Grotesk",system-ui,sans-serif;
+    --body:"Instrument Sans",system-ui,sans-serif;
+    --mono:"IBM Plex Mono",ui-monospace,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--ground);color:var(--ink);font-family:var(--body);
+    font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased;
+  }
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.5;
+    background-image:radial-gradient(circle at 1px 1px, rgba(243,241,233,.055) 1px, transparent 0);
+    background-size:4px 4px;
+  }
+  body::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:radial-gradient(ellipse 900px 500px at 15% -10%, rgba(255,79,160,.10), transparent 60%),
+               radial-gradient(ellipse 800px 500px at 100% 10%, rgba(51,230,200,.08), transparent 55%);
+  }
+  .wrap{position:relative;z-index:1;max-width:1240px;margin:0 auto;padding:26px 22px 90px}
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;padding-bottom:14px;border-bottom:2px solid var(--ink);flex-wrap:wrap}
+  .brand{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+  .brand h1{font-family:var(--display);font-weight:700;font-size:clamp(30px,5vw,50px);letter-spacing:-.035em;margin:0;line-height:.92}
+  .brand h1 em{font-style:normal;color:var(--stamp)}
+  .brand .sub{font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+  .ledger{font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;color:var(--ink-soft);text-align:right}
+  .ledger b{color:var(--ochre);font-weight:600}
+  .grid{display:grid;grid-template-columns:350px 1fr;gap:40px;margin-top:32px;align-items:start}
+  @media(max-width:960px){.grid{grid-template-columns:1fr;gap:30px}}
+  .eyebrow{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--ink-soft);display:flex;align-items:center;gap:12px;margin:0 0 14px}
+  .eyebrow::after{content:"";flex:1;height:1px;background:var(--hair)}
+  .drop{position:relative;display:block;background:var(--recess);border:1.5px dashed var(--hair);padding:36px 22px;text-align:center;cursor:pointer;transition:border-color .18s,background .18s}
+  .drop:hover,.drop:focus-visible,.drop.hot{border-color:var(--stamp);background:#1B141B}
+  .drop.hot{border-style:solid}
+  .drop h2{font-family:var(--display);font-size:19px;font-weight:600;margin:0 0 6px;letter-spacing:-.015em;color:var(--ink)}
+  .drop p{margin:0;font-size:13px;color:var(--ink-soft)}
+  .drop .glyph{font-family:var(--mono);font-size:28px;color:var(--stamp);letter-spacing:-.1em;display:block;margin-bottom:12px}
+  .drop input{position:absolute;inset:0;opacity:0;cursor:pointer}
+  .thumb{margin:16px 0 0;border:1.5px solid var(--hair);background:var(--recess);padding:0;overflow:hidden}
+  .thumb img{display:block;width:100%;height:auto;max-height:290px;object-fit:contain}
+  .thumb figcaption{font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);letter-spacing:.06em;padding:8px 10px;border-top:1px solid var(--hair);word-break:break-all}
+  .btn{font-family:var(--body);font-weight:600;font-size:14px;background:var(--stamp);color:#100910;border:1.5px solid var(--stamp);padding:12px 18px;cursor:pointer;width:100%;margin-top:12px;transition:background .16s,color .16s,border-color .16s,box-shadow .16s}
+  .btn:hover:not(:disabled){background:var(--ochre);border-color:var(--ochre);box-shadow:0 0 0 3px rgba(214,255,61,.16)}
+  .btn:disabled{opacity:.3;cursor:not-allowed;box-shadow:none}
+  .btn.ghost{background:transparent;color:var(--ink);border-color:var(--hair)}
+  .btn.ghost:hover:not(:disabled){background:var(--recess);color:var(--sea);border-color:var(--sea);box-shadow:none}
+  :focus-visible{outline:2.5px solid var(--stamp);outline-offset:2px}
+  .status{font-family:var(--mono);font-size:11.5px;letter-spacing:.05em;margin-top:16px;padding:11px 13px;border-left:3px solid var(--stamp);background:rgba(255,79,160,.08);color:var(--ink)}
+  .status.err{border-color:var(--alarm);background:rgba(255,95,86,.09);color:var(--alarm)}
+  .status .dots::after{content:"";animation:dots 1.2s steps(4,end) infinite}
+  @keyframes dots{0%{content:""}25%{content:"."}50%{content:".."}75%{content:"..."}}
+  .tape-shell{position:relative;margin-top:22px;filter:drop-shadow(0 0 26px rgba(255,79,160,.18)) drop-shadow(0 10px 18px rgba(0,0,0,.55))}
+  .zig{height:9px;background:var(--tape);-webkit-mask-image:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg);mask-image:conic-gradient(from -45deg at bottom,#0000,#000 1deg 89deg,#0000 90deg);-webkit-mask-size:14px 100%;mask-size:14px 100%;-webkit-mask-repeat:repeat-x;mask-repeat:repeat-x}
+  .zig.top{transform:rotate(180deg)}
+  .tape{background:var(--tape);color:#181A14;padding:20px 22px;font-family:var(--mono);font-size:12.5px;position:relative;overflow:hidden}
+  .tape .merchant{font-size:14px;font-weight:600;letter-spacing:.02em;text-transform:uppercase}
+  .tape .meta{color:#6B6D5E;font-size:11px;letter-spacing:.05em;margin-top:3px}
+  .tape hr{border:0;border-top:1px dashed #C9C6B4;margin:13px 0}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:2.5px 0}
+  .row span:first-child{flex:1;min-width:0}
+  .row .qty{color:#8A8C7C;font-size:11px}
+  .row.total{font-weight:600;font-size:14px;padding-top:8px}
+  .stamp{position:absolute;right:14px;bottom:36px;transform:rotate(-11deg);border:2.5px solid var(--stamp);color:var(--stamp);padding:5px 11px;font-family:var(--mono);font-weight:600;font-size:12px;letter-spacing:.1em;opacity:.85;text-align:center;line-height:1.25;pointer-events:none;mix-blend-mode:multiply}
+  .stamp small{display:block;font-size:9px;letter-spacing:.14em;opacity:.9}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);border-top:2px solid var(--ink);border-bottom:1px solid var(--hair)}
+  @media(max-width:640px){.kpis{grid-template-columns:1fr}}
+  .kpi{padding:18px 22px 20px;border-right:1px solid var(--hair)}
+  .kpi:first-child{padding-left:0}
+  .kpi:last-child{border-right:0}
+  @media(max-width:640px){.kpi{border-right:0;border-bottom:1px solid var(--hair);padding-left:0}.kpi:last-child{border-bottom:0}}
+  .kpi .label{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+  .kpi .value{font-family:var(--display);font-size:clamp(26px,3.4vw,36px);font-weight:700;letter-spacing:-.038em;margin-top:8px;line-height:1}
+  .kpi .note{font-family:var(--mono);font-size:11px;color:var(--ink-soft);margin-top:7px}
+  .kpi.usd .value{color:var(--stamp)}
+  .panel{margin-top:36px}
+  .bars{border-top:1px solid var(--hair)}
+  .bar{padding:12px 0;border-bottom:1px solid var(--hair-soft)}
+  .bar .head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-family:var(--mono);font-size:12px}
+  .bar .cat{font-weight:500;letter-spacing:.02em}
+  .bar .amt{color:var(--ink-soft)}
+  .bar .amt b{color:var(--ink);font-weight:600}
+  .track{height:8px;background:var(--recess);margin-top:8px;box-shadow:inset 0 0 0 1px var(--hair)}
+  .fill{height:100%;transition:width .55s cubic-bezier(.2,.7,.2,1)}
+  .bar:nth-child(1) .fill{background:var(--stamp);box-shadow:0 0 10px rgba(255,79,160,.55)}
+  .bar:nth-child(2) .fill{background:var(--sea);box-shadow:0 0 10px rgba(51,230,200,.5)}
+  .bar:nth-child(3) .fill{background:var(--ochre);box-shadow:0 0 10px rgba(214,255,61,.5)}
+  .bar:nth-child(n+4) .fill{background:var(--amber)}
+  .rank{display:grid;grid-template-columns:repeat(3,1fr);border-top:2px solid var(--ink)}
+  @media(max-width:640px){.rank{grid-template-columns:1fr}}
+  .rank div{padding:16px 20px 4px;border-right:1px solid var(--hair)}
+  .rank div:first-child{padding-left:0}
+  .rank div:last-child{border-right:0}
+  @media(max-width:640px){.rank div{border-right:0;border-bottom:1px solid var(--hair);padding-left:0}.rank div:last-child{border-bottom:0}}
+  .rank .pos{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft)}
+  .rank .name{font-family:var(--display);font-size:19px;font-weight:600;letter-spacing:-.02em;margin-top:4px}
+  .rank div:nth-child(1) .name{color:var(--stamp)}
+  .rank div:nth-child(2) .name{color:var(--sea)}
+  .rank div:nth-child(3) .name{color:var(--ochre)}
+  .rank .pct{font-family:var(--mono);font-size:12px;color:var(--ink-soft);margin-top:3px}
+  table{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px}
+  th{text-align:left;font-weight:500;font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);padding:0 12px 9px 0;border-bottom:2px solid var(--ink)}
+  td{padding:10px 12px 10px 0;border-bottom:1px solid var(--hair-soft);vertical-align:top;color:var(--ink)}
+  th.num,td.num{text-align:right;padding-right:0;white-space:nowrap}
+  tbody tr:hover{background:rgba(255,79,160,.06)}
+  .tag{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--sea);border:1px solid rgba(51,230,200,.4);padding:1.5px 6px;white-space:nowrap}
+  .empty{border-top:2px solid var(--ink);padding:64px 0 0;max-width:52ch}
+  .empty h3{font-family:var(--display);font-size:clamp(24px,3.6vw,34px);font-weight:600;margin:0 0 12px;letter-spacing:-.03em;line-height:1.1}
+  .empty p{margin:0;color:var(--ink-soft);font-size:15px}
+  .empty .steps{margin-top:26px;border-top:1px solid var(--hair)}
+  .empty .steps li{list-style:none;display:flex;gap:14px;padding:11px 0;border-bottom:1px solid var(--hair-soft);font-family:var(--mono);font-size:12px;color:var(--ink)}
+  .empty .steps ol{margin:0;padding:0}
+  .empty .steps .k{color:var(--stamp);font-weight:600;min-width:22px}
+  .hist{font-family:var(--mono);font-size:12px}
+  .hist ul{margin:0;padding:0;border-top:1px solid var(--hair)}
+  .hist li{display:flex;justify-content:space-between;gap:14px;padding:9px 0;border-bottom:1px solid var(--hair-soft);list-style:none}
+  .hist .who{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
+  .hist .when{color:var(--ink-soft);font-size:11px}
+  .fine{font-family:var(--mono);font-size:10.5px;color:var(--ink-soft);letter-spacing:.04em;margin-top:14px;line-height:1.65}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="brand">
+      <h1>Chicha<em>byte</em></h1>
+      <span class="sub">Gastos de viaje · lectura de tickets</span>
+    </div>
+    <div class="ledger" id="ledger">Sin tickets cargados en esta sesión</div>
+  </header>
+
+  <div class="grid">
+    <section>
+      <p class="eyebrow">Cargar ticket</p>
+      <label class="drop" id="drop" tabindex="0">
+        <span class="glyph">[ ]</span>
+        <h2>Soltá la foto del ticket</h2>
+        <p>o hacé clic para elegirla. También podés pegarla con Ctrl+V.</p>
+        <input type="file" id="file" accept="image/png,image/jpeg,image/webp">
+      </label>
+      <figure class="thumb" id="thumb" hidden>
+        <img id="preview" alt="Ticket cargado">
+        <figcaption id="fname"></figcaption>
+      </figure>
+      <button class="btn" id="analyze" disabled>Analizar ticket</button>
+      <button class="btn ghost" id="save" disabled>Guardar en Airtable</button>
+      <div id="status" hidden></div>
+      <div id="tapeWrap"></div>
+      <div class="hist" id="hist" hidden>
+        <p class="eyebrow" style="margin-top:30px">Tickets de la sesión</p>
+        <ul id="histList"></ul>
+      </div>
+    </section>
+
+    <section>
+      <div id="dash">
+        <div class="empty">
+          <h3>Todavía no hay nada que analizar</h3>
+          <p>Subí la foto de un ticket y lo leo línea por línea, en cualquier moneda.</p>
+          <div class="steps"><ol>
+            <li><span class="k">01</span><span>Leo productos, cantidades y precios, y marco lo ilegible.</span></li>
+            <li><span class="k">02</span><span>Detecto la moneda y busco la cotización del día de la compra.</span></li>
+            <li><span class="k">03</span><span>Armo el gasto por categoría y lo guardo en Airtable.</span></li>
+          </ol></div>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+const CATS = ["Alimentación","Transporte","Alojamiento","Vestimenta","Ocio","Salud","Otros"];
+const state = { img:null, mime:null, name:"", current:null, session:[] };
+
+const $ = id => document.getElementById(id);
+const money = (n,cur) => new Intl.NumberFormat("es-UY",{style:"currency",currency:cur||"USD",maximumFractionDigits:2}).format(n||0);
+const usd = n => "$" + (n||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2});
+const esc = s => String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function say(msg,kind){
+  const el = $("status");
+  el.hidden = false;
+  el.className = "status" + (kind==="err" ? " err" : "");
+  el.innerHTML = kind==="work" ? esc(msg)+'<span class="dots"></span>' : esc(msg);
+}
+function quiet(){ $("status").hidden = true; }
+
+const drop = $("drop");
+["dragenter","dragover"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add("hot")}));
+["dragleave","drop"].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove("hot")}));
+drop.addEventListener("drop",ev=>{ const f=ev.dataTransfer.files[0]; if(f) intake(f); });
+drop.addEventListener("keydown",ev=>{ if(ev.key==="Enter"||ev.key===" "){ev.preventDefault();$("file").click();} });
+$("file").addEventListener("change",e=>{ const f=e.target.files[0]; if(f) intake(f); });
+window.addEventListener("paste",e=>{
+  for(const it of (e.clipboardData?.items||[])){
+    if(it.type.startsWith("image/")) { intake(it.getAsFile()); break; }
+  }
+});
+
+function intake(file){
+  if(!file.type.startsWith("image/")){ say("Ese archivo no es una imagen. Subí una foto en JPG, PNG o WebP.","err"); return; }
+  const r = new FileReader();
+  r.onload = () => {
+    state.img  = r.result.split(",")[1];
+    state.mime = file.type;
+    state.name = file.name || "ticket.jpg";
+    $("preview").src = r.result;
+    $("fname").textContent = state.name;
+    $("thumb").hidden = false;
+    $("analyze").disabled = false;
+    $("save").disabled = true;
+    quiet();
+  };
+  r.onerror = () => say("No se pudo leer el archivo. Probá con otra foto.","err");
+  r.readAsDataURL(file);
+}
+
+async function api(path, payload){
+  const res = await fetch(path, {
+    method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if(!res.ok) throw new Error(data.error || ("Error " + res.status));
+  return data;
+}
+
+$("analyze").addEventListener("click", async () => {
+  if(!state.img) return;
+  $("analyze").disabled = true; $("save").disabled = true;
+  try{
+    say("Leyendo el ticket y buscando la cotización del día","work");
+    const t = await api("/api/analyze", { image_base64: state.img, mime: state.mime });
+
+    state.current = t;
+    state.session.push(t);
+    quiet();
+    renderTape(t);
+    renderDash();
+    renderHist();
+    $("save").disabled = false;
+  }catch(err){
+    say(err.message || "Algo falló en la lectura. Probá con otra foto.","err");
+  }finally{
+    $("analyze").disabled = false;
+  }
+});
+
+function renderTape(t){
+  const cur = t.moneda || "USD";
+  const lines = (t.items||[]).map(i=>
+    '<div class="row"><span>'+esc(i.producto)+' '+(i.cantidad>1?'<span class="qty">×'+i.cantidad+'</span>':'')+
+    '</span><span>'+money(i.total_linea,cur)+'</span></div>').join("");
+
+  $("tapeWrap").innerHTML =
+    '<p class="eyebrow" style="margin-top:28px">Lectura</p>'+
+    '<div class="tape-shell"><div class="zig top"></div><div class="tape">'+
+      '<div class="merchant">'+esc(t.comercio||"Comercio sin identificar")+'</div>'+
+      '<div class="meta">'+esc(t.lugar||"—")+(t.fecha?" · "+esc(t.fecha):"")+(t.numero_ticket?" · Nº "+esc(t.numero_ticket):"")+'</div>'+
+      '<hr>'+lines+'<hr>'+
+      (t.descuento>0?'<div class="row"><span>Descuento aplicado</span><span>−'+money(t.descuento,cur)+'</span></div>':'')+
+      '<div class="row total"><span>Total '+esc(cur)+'</span><span>'+money(t.total,cur)+'</span></div>'+
+      '<div class="row" style="color:#C22E77"><span>Equivalente USD</span><span>'+usd(t.total_usd)+'</span></div>'+
+      '<div class="stamp">'+esc(cur)+' → USD<small>1 = '+t.tasa.toFixed(t.tasa<0.1?5:4)+'</small></div>'+
+      '<hr><div class="meta">'+esc(t.fuente_tasa||"")+'</div>'+
+    '</div><div class="zig"></div></div>';
+}
+
+function renderDash(){
+  const t = state.current;
+  if(!t) return;
+  const cur = t.moneda||"USD";
+  const day = t.fecha;
+  const dayTickets = state.session.filter(x => x.fecha === day);
+  const dayCat = {}; let dayTotal = 0;
+  dayTickets.forEach(x => (x.items||[]).forEach(i=>{
+    const c = CATS.includes(i.categoria) ? i.categoria : "Otros";
+    dayCat[c] = (dayCat[c]||0) + (i.usd||0);
+    dayTotal += (i.usd||0);
+  }));
+  const ranked = Object.entries(dayCat).sort((a,b)=>b[1]-a[1]);
+  const max = ranked.length ? ranked[0][1] : 1;
+
+  const bars = ranked.map(([c,v])=>
+    '<div class="bar"><div class="head"><span class="cat">'+esc(c)+'</span>'+
+    '<span class="amt"><b>'+usd(v)+'</b> · '+((v/dayTotal)*100).toFixed(1)+'%</span></div>'+
+    '<div class="track"><div class="fill" style="width:'+(v/max*100).toFixed(1)+'%"></div></div></div>').join("");
+
+  const top3 = ranked.slice(0,3).map(([c,v],idx)=>
+    '<div><div class="pos">'+["Primero","Segundo","Tercero"][idx]+'</div>'+
+    '<div class="name">'+esc(c)+'</div>'+
+    '<div class="pct">'+((v/dayTotal)*100).toFixed(1)+'% · '+usd(v)+'</div></div>').join("")
+    || '<div><div class="pos">Sin datos</div></div>';
+
+  const rows = (t.items||[]).map(i=>
+    '<tr><td>'+esc(i.producto)+'</td>'+
+    '<td><span class="tag">'+esc(CATS.includes(i.categoria)?i.categoria:"Otros")+'</span></td>'+
+    '<td class="num">'+money(i.total_linea,cur)+'</td>'+
+    '<td class="num">'+usd(i.usd)+'</td>'+
+    '<td class="num">'+(i.cantidad||1)+'</td></tr>').join("");
+
+  $("dash").innerHTML =
+    '<div class="kpis">'+
+      '<div class="kpi"><div class="label">Total del ticket</div><div class="value">'+money(t.total,cur)+
+        '</div><div class="note">moneda original · '+esc(cur)+'</div></div>'+
+      '<div class="kpi usd"><div class="label">En dólares</div><div class="value">'+usd(t.total_usd)+
+        '</div><div class="note">1 '+esc(cur)+' = '+t.tasa.toFixed(t.tasa<0.1?5:4)+' USD</div></div>'+
+      '<div class="kpi"><div class="label">Categoría</div><div class="value" style="font-size:27px">'+
+        esc(t.categoria_principal||"Otros")+'</div><div class="note">'+(t.items||[]).length+' líneas leídas</div></div>'+
+    '</div>'+
+    '<div class="panel"><p class="eyebrow">Gasto del día por categoría'+(day?" · "+esc(day):"")+'</p>'+
+      '<div class="bars">'+bars+'</div>'+
+      '<p class="fine">Acumula todos los tickets de esta sesión con fecha '+esc(day||"sin fecha")+' — '+
+      dayTickets.length+' ticket'+(dayTickets.length===1?"":"s")+', '+usd(dayTotal)+' en total.</p></div>'+
+    '<div class="panel"><p class="eyebrow">Las tres categorías que más pesaron</p><div class="rank">'+top3+'</div></div>'+
+    '<div class="panel"><p class="eyebrow">Detalle de la compra</p><table><thead><tr>'+
+      '<th>Producto</th><th>Categoría</th><th class="num">Precio '+esc(cur)+'</th>'+
+      '<th class="num">Precio USD</th><th class="num">Cant.</th></tr></thead><tbody>'+rows+'</tbody></table>'+
+      (t.notas?'<p class="fine">'+esc(t.notas)+'</p>':'')+'</div>';
+}
+
+function renderHist(){
+  const n = state.session.length;
+  const sum = state.session.reduce((a,x)=>a+(x.total_usd||0),0);
+  $("ledger").innerHTML = n+" ticket"+(n===1?"":"s")+" en esta sesión · <b>"+usd(sum)+"</b>";
+  $("hist").hidden = n===0;
+  $("histList").innerHTML = state.session.slice().reverse().map(x=>
+    '<li><span class="who">'+esc(x.comercio||"Sin identificar")+'</span>'+
+    '<span class="when">'+esc(x.fecha||"s/f")+'</span><span>'+usd(x.total_usd)+'</span></li>').join("");
+}
+
+$("save").addEventListener("click", async () => {
+  const t = state.current;
+  if(!t) return;
+  $("save").disabled = true;
+  try{
+    say("Guardando en Airtable","work");
+    const out = await api("/api/save", { ticket: t });
+    say("Guardado. Ticket + "+out.gastos+" líneas de detalle en la base.");
+  }catch(err){
+    say(err.message || "No se pudo guardar en Airtable.","err");
+    $("save").disabled = false;
+  }
+});
+</script>
