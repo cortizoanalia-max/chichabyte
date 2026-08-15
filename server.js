@@ -1,17 +1,21 @@
-// Chichabyte — backend standalone
+// Chichabyte — backend standalone (motor gratuito: Google Gemini)
 // Corre con: node server.js
-// No tiene dependencias externas (usa el fetch y http nativos de Node 18+).
+// Sin dependencias externas (usa el fetch y http nativos de Node 18+).
 //
-// Configuración: completá las tres variables de abajo, o definilas como
-// variables de entorno con el mismo nombre (ANTHROPIC_API_KEY, AIRTABLE_TOKEN,
-// AIRTABLE_BASE_ID) — las variables de entorno tienen prioridad si existen.
+// Completá las dos llaves de abajo, o definilas como variables de entorno
+// con el mismo nombre (GEMINI_API_KEY, AIRTABLE_TOKEN) — las variables de
+// entorno tienen prioridad si existen.
 
 const CONFIG = {
-  ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY || "PEGA_ACA_TU_API_KEY_DE_ANTHROPIC",
-  AIRTABLE_TOKEN:     process.env.AIRTABLE_TOKEN     || "PEGA_ACA_TU_PERSONAL_ACCESS_TOKEN_DE_AIRTABLE",
-  AIRTABLE_BASE_ID:   process.env.AIRTABLE_BASE_ID   || "appGuGZs2b4KREXFw",
-  PORT:               process.env.PORT || 3000,
+  GEMINI_API_KEY:     process.env.GEMINI_API_KEY     || "PEGA_ACA_TU_API_KEY_DE_GOOGLE_AI_STUDIO",
+  AIRTABLE_TOKEN:      process.env.AIRTABLE_TOKEN     || "PEGA_ACA_TU_PERSONAL_ACCESS_TOKEN_DE_AIRTABLE",
+  AIRTABLE_BASE_ID:    process.env.AIRTABLE_BASE_ID   || "appGuGZs2b4KREXFw",
+  PORT:                process.env.PORT || 3000,
 };
+
+// Modelo gratuito de Gemini usado para leer el ticket. Si en el futuro Google
+// cambia los nombres de modelo, este es el único lugar que hay que tocar.
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 const TABLES = {
   tickets: "tblmGV81NIi5FEyyH",
@@ -19,7 +23,6 @@ const TABLES = {
 };
 
 // IDs de campo tal como están hoy en la base "Gastos Viaje - App Compras".
-// Si renombrás o agregás campos en Airtable, actualizá estos IDs.
 const FIELDS = {
   tickets: {
     comercio: "fldBPz95aUix5YbpB",
@@ -79,24 +82,34 @@ function parseModelJSON(text) {
   return JSON.parse(clean.slice(a, b + 1));
 }
 
-async function anthropicMessages(body) {
-  if (!CONFIG.ANTHROPIC_API_KEY || CONFIG.ANTHROPIC_API_KEY.startsWith("PEGA_ACA")) {
-    throw new Error("Falta configurar ANTHROPIC_API_KEY en server.js (o como variable de entorno).");
+// -------------------------------------------------------- Gemini (gratis)
+
+async function geminiVision(prompt, imageBase64, mime) {
+  if (!CONFIG.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY.startsWith("PEGA_ACA")) {
+    throw new Error("Falta configurar GEMINI_API_KEY en server.js (o como variable de entorno).");
   }
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+  const r = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": CONFIG.ANTHROPIC_API_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(body),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents: [{
+        parts: [
+          { text: prompt },
+          { inline_data: { mime_type: mime, data: imageBase64 } },
+        ],
+      }],
+      generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+    }),
   });
   const data = await r.json();
   if (!r.ok) {
-    throw new Error("Anthropic API: " + (data?.error?.message || r.status));
+    const msg = data?.error?.message || r.status;
+    if (r.status === 429) throw new Error("Se agotó la cuota gratuita de Gemini por hoy (o por minuto). Esperá un poco y probá de nuevo.");
+    throw new Error("Gemini API: " + msg);
   }
-  const text = (data.content || []).filter((b) => b.type === "text").map((b) => b.text).join("\n");
+  const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n") || "";
+  if (!text) throw new Error("Gemini no devolvió texto (puede haber bloqueado la imagen por seguridad).");
   return text;
 }
 
@@ -126,38 +139,26 @@ Reglas:
 - "total" es el importe final efectivamente pagado.
 - Los números van sin símbolos ni separadores de miles: 2662.50, no "$U 2.662,50".`;
 
-  const text = await anthropicMessages({
-    model: "claude-haiku-4-5-20251001",
-    max_tokens: 1800,
-    messages: [
-      {
-        role: "user",
-        content: [
-          { type: "image", source: { type: "base64", media_type: mime, data: imageBase64 } },
-          { type: "text", text: prompt },
-        ],
-      },
-    ],
-  });
+  const text = await geminiVision(prompt, imageBase64, mime);
   return parseModelJSON(text);
 }
 
+// --------------------------------------------- cotización (sin IA, gratis)
+
 // Cotizaciones ya buscadas: persisten en un archivo en disco para
 // sobrevivir a que Render "duerma" el servicio gratuito y lo reinicie.
-// moneda+fecha -> {rate, fuente}
 const RATE_CACHE_FILE = path.join(__dirname, "rate-cache.json");
 function loadRateCache() {
   try { return JSON.parse(fs.readFileSync(RATE_CACHE_FILE, "utf8")); } catch { return {}; }
 }
 function saveRateCache(obj) {
-  try { fs.writeFileSync(RATE_CACHE_FILE, JSON.stringify(obj)); } catch { /* no-op si el disco es de solo lectura */ }
+  try { fs.writeFileSync(RATE_CACHE_FILE, JSON.stringify(obj)); } catch { /* disco de solo lectura, no pasa nada */ }
 }
 const rateCache = loadRateCache();
 
-// Cotización real, sin pasar por ningún modelo de IA: usa la API pública
-// y gratuita fawazahmed0/currency-api (sin key, sin límite documentado,
-// cubre 200+ monedas). Si el día exacto no tiene dato (fin de semana/feriado
-// bursátil), reintenta con los días anteriores hasta encontrar uno.
+// API pública y gratuita fawazahmed0/currency-api (sin key, sin límite
+// documentado, cubre 200+ monedas). Si el día exacto no tiene dato
+// (fin de semana/feriado), reintenta con los días anteriores.
 async function fetchRate(currency, fecha) {
   if (!currency || currency === "USD") {
     return { rate: 1, fuente: "Moneda ya expresada en dólares" };
@@ -166,7 +167,6 @@ async function fetchRate(currency, fecha) {
   const key = cur + "_" + (fecha || "latest");
   if (rateCache[key]) return rateCache[key];
 
-  const base = fecha || "latest";
   const tried = [];
   for (let back = 0; back <= 6; back++) {
     let dateStr = "latest";
@@ -175,7 +175,7 @@ async function fetchRate(currency, fecha) {
       d.setUTCDate(d.getUTCDate() - back);
       dateStr = d.toISOString().slice(0, 10);
     } else if (back > 0) {
-      break; // sin fecha de referencia, solo probamos "latest"
+      break;
     }
     tried.push(dateStr);
     const url = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${dateStr}/v1/currencies/${cur}.json`;
@@ -198,6 +198,8 @@ async function fetchRate(currency, fecha) {
   }
   throw new Error("No se encontró una cotización para " + currency.toUpperCase() + " (probé: " + tried.join(", ") + ").");
 }
+
+// ------------------------------------------------------------- Airtable
 
 async function airtableCreate(tableId, records) {
   if (!CONFIG.AIRTABLE_TOKEN || CONFIG.AIRTABLE_TOKEN.startsWith("PEGA_ACA")) {
@@ -301,7 +303,6 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && req.url === "/api/analyze") return await handleAnalyze(req, res);
     if (req.method === "POST" && req.url === "/api/save") return await handleSave(req, res);
 
-    // archivos estáticos desde /public
     let filePath = path.join(__dirname, "public", req.url === "/" ? "index.html" : req.url);
     if (!filePath.startsWith(path.join(__dirname, "public"))) return sendJSON(res, 403, { error: "Prohibido" });
     if (!fs.existsSync(filePath)) return sendJSON(res, 404, { error: "No encontrado" });
@@ -315,6 +316,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(CONFIG.PORT, () => {
   console.log(`Chichabyte corriendo en http://localhost:${CONFIG.PORT}`);
-  if (CONFIG.ANTHROPIC_API_KEY.startsWith("PEGA_ACA")) console.log("⚠ Falta ANTHROPIC_API_KEY");
+  if (CONFIG.GEMINI_API_KEY.startsWith("PEGA_ACA")) console.log("⚠ Falta GEMINI_API_KEY");
   if (CONFIG.AIRTABLE_TOKEN.startsWith("PEGA_ACA")) console.log("⚠ Falta AIRTABLE_TOKEN");
 });
