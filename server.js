@@ -127,8 +127,8 @@ Reglas:
 - Los números van sin símbolos ni separadores de miles: 2662.50, no "$U 2.662,50".`;
 
   const text = await anthropicMessages({
-    model: "claude-sonnet-4-6",
-    max_tokens: 4000,
+    model: "claude-haiku-4-5-20251001",
+    max_tokens: 1800,
     messages: [
       {
         role: "user",
@@ -142,30 +142,61 @@ Reglas:
   return parseModelJSON(text);
 }
 
+// Cotizaciones ya buscadas: persisten en un archivo en disco para
+// sobrevivir a que Render "duerma" el servicio gratuito y lo reinicie.
+// moneda+fecha -> {rate, fuente}
+const RATE_CACHE_FILE = path.join(__dirname, "rate-cache.json");
+function loadRateCache() {
+  try { return JSON.parse(fs.readFileSync(RATE_CACHE_FILE, "utf8")); } catch { return {}; }
+}
+function saveRateCache(obj) {
+  try { fs.writeFileSync(RATE_CACHE_FILE, JSON.stringify(obj)); } catch { /* no-op si el disco es de solo lectura */ }
+}
+const rateCache = loadRateCache();
+
+// Cotización real, sin pasar por ningún modelo de IA: usa la API pública
+// y gratuita fawazahmed0/currency-api (sin key, sin límite documentado,
+// cubre 200+ monedas). Si el día exacto no tiene dato (fin de semana/feriado
+// bursátil), reintenta con los días anteriores hasta encontrar uno.
 async function fetchRate(currency, fecha) {
   if (!currency || currency === "USD") {
     return { rate: 1, fuente: "Moneda ya expresada en dólares" };
   }
-  const text = await anthropicMessages({
-    model: "claude-sonnet-4-6",
-    max_tokens: 1000,
-    messages: [
-      {
-        role: "user",
-        content:
-          "Buscá en la web la cotización de 1 " + currency + " expresada en dólares estadounidenses (USD) para la fecha " +
-          (fecha || "más reciente disponible") + ". Si ese día el mercado estaba cerrado, usá el cierre hábil más cercano y aclaralo. " +
-          'Respondé SOLO con JSON válido, sin markdown: {"rate": number, "fuente": "medio y fecha del dato"}. ' +
-          '"rate" es cuántos dólares vale 1 ' + currency + " (por ejemplo si 1 USD = 40,20 UYU entonces rate = 0.0249).",
-      },
-    ],
-    tools: [{ type: "web_search_20250305", name: "web_search" }],
-  });
-  const r = parseModelJSON(text);
-  if (!r.rate || !isFinite(r.rate) || r.rate <= 0) {
-    throw new Error("No se encontró una cotización confiable para " + currency + ".");
+  const cur = currency.toLowerCase();
+  const key = cur + "_" + (fecha || "latest");
+  if (rateCache[key]) return rateCache[key];
+
+  const base = fecha || "latest";
+  const tried = [];
+  for (let back = 0; back <= 6; back++) {
+    let dateStr = "latest";
+    if (fecha) {
+      const d = new Date(fecha + "T00:00:00Z");
+      d.setUTCDate(d.getUTCDate() - back);
+      dateStr = d.toISOString().slice(0, 10);
+    } else if (back > 0) {
+      break; // sin fecha de referencia, solo probamos "latest"
+    }
+    tried.push(dateStr);
+    const url = `https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@${dateStr}/v1/currencies/${cur}.json`;
+    try {
+      const r = await fetch(url);
+      if (!r.ok) continue;
+      const data = await r.json();
+      const rate = data?.[cur]?.usd;
+      if (rate && isFinite(rate) && rate > 0) {
+        const result = {
+          rate,
+          fuente: `Cotización de mercado del ${data.date} (fawazahmed0/currency-api)` +
+                   (back > 0 ? ` — ${fecha} no tenía dato publicado, se usó el hábil más cercano` : ""),
+        };
+        rateCache[key] = result;
+        saveRateCache(rateCache);
+        return result;
+      }
+    } catch { /* probamos la fecha siguiente */ }
   }
-  return r;
+  throw new Error("No se encontró una cotización para " + currency.toUpperCase() + " (probé: " + tried.join(", ") + ").");
 }
 
 async function airtableCreate(tableId, records) {

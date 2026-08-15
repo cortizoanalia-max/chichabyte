@@ -227,20 +227,44 @@ window.addEventListener("paste",e=>{
 
 function intake(file){
   if(!file.type.startsWith("image/")){ say("Ese archivo no es una imagen. Subí una foto en JPG, PNG o WebP.","err"); return; }
-  const r = new FileReader();
-  r.onload = () => {
-    state.img  = r.result.split(",")[1];
-    state.mime = file.type;
+  compress(file).then(({dataUrl, base64, mime})=>{
+    state.img  = base64;
+    state.mime = mime;
     state.name = file.name || "ticket.jpg";
-    $("preview").src = r.result;
+    $("preview").src = dataUrl;
     $("fname").textContent = state.name;
     $("thumb").hidden = false;
     $("analyze").disabled = false;
     $("save").disabled = true;
     quiet();
-  };
-  r.onerror = () => say("No se pudo leer el archivo. Probá con otra foto.","err");
-  r.readAsDataURL(file);
+  }).catch(()=> say("No se pudo leer el archivo. Probá con otra foto.","err"));
+}
+
+// Reduce cualquier foto a un ancho máximo de 1500px y la recomprime en JPEG.
+// Un ticket se lee perfecto a esa resolución, y baja mucho el costo de la
+// llamada a la API (las imágenes grandes de celular consumen bastantes
+// tokens sin aportar nada extra de legibilidad).
+function compress(file, maxDim, quality){
+  maxDim = maxDim || 1500; quality = quality || 0.82;
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onload = () => { img.onload = () => {
+      let {width, height} = img;
+      if (width > maxDim || height > maxDim) {
+        const scale = maxDim / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+      resolve({ dataUrl, base64: dataUrl.split(",")[1], mime: "image/jpeg" });
+    }; img.onerror = reject; img.src = reader.result; };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
 }
 
 async function api(path, payload){
