@@ -13,9 +13,12 @@ const CONFIG = {
   PORT:                process.env.PORT || 3000,
 };
 
-// Modelo gratuito de Gemini usado para leer el ticket. Si en el futuro Google
-// cambia los nombres de modelo, este es el único lugar que hay que tocar.
-const GEMINI_MODEL = "gemini-2.5-flash";
+// Modelo gratuito de Gemini usado para leer el ticket. Se usa el alias
+// "-latest", que Google actualiza automáticamente cada vez que sale una
+// versión nueva del modelo Flash, así este archivo no queda atado a un
+// nombre puntual que en algún momento se discontinúa. Si por algún motivo
+// ese alias no responde, se prueba con la lista de respaldo en orden.
+const GEMINI_MODELS = ["gemini-flash-latest", "gemini-2.5-flash-lite", "gemini-2.5-flash", "gemini-2.0-flash"];
 
 const TABLES = {
   tickets: "tblmGV81NIi5FEyyH",
@@ -88,29 +91,42 @@ async function geminiVision(prompt, imageBase64, mime) {
   if (!CONFIG.GEMINI_API_KEY || CONFIG.GEMINI_API_KEY.startsWith("PEGA_ACA")) {
     throw new Error("Falta configurar GEMINI_API_KEY en server.js (o como variable de entorno).");
   }
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
-  const r = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{
-        parts: [
-          { text: prompt },
-          { inline_data: { mime_type: mime, data: imageBase64 } },
-        ],
-      }],
-      generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
-    }),
-  });
-  const data = await r.json();
-  if (!r.ok) {
-    const msg = data?.error?.message || r.status;
-    if (r.status === 429) throw new Error("Se agotó la cuota gratuita de Gemini por hoy (o por minuto). Esperá un poco y probá de nuevo.");
-    throw new Error("Gemini API: " + msg);
+  let lastErr;
+  for (const model of GEMINI_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${CONFIG.GEMINI_API_KEY}`;
+    let r, data;
+    try {
+      r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: prompt },
+              { inline_data: { mime_type: mime, data: imageBase64 } },
+            ],
+          }],
+          generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+        }),
+      });
+      data = await r.json();
+    } catch (netErr) {
+      lastErr = netErr;
+      continue;
+    }
+    if (!r.ok) {
+      const msg = data?.error?.message || String(r.status);
+      lastErr = new Error("Gemini API (" + model + "): " + msg);
+      // Si el modelo fue discontinuado (404 o "no longer available"), probamos el siguiente de la lista.
+      if (r.status === 404 || /no longer available|not found/i.test(msg)) continue;
+      if (r.status === 429) throw new Error("Se agotó la cuota gratuita de Gemini por hoy (o por minuto). Esperá un poco y probá de nuevo.");
+      throw lastErr;
+    }
+    const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n") || "";
+    if (!text) { lastErr = new Error("Gemini (" + model + ") no devolvió texto (puede haber bloqueado la imagen por seguridad)."); continue; }
+    return text;
   }
-  const text = data?.candidates?.[0]?.content?.parts?.map(p => p.text || "").join("\n") || "";
-  if (!text) throw new Error("Gemini no devolvió texto (puede haber bloqueado la imagen por seguridad).");
-  return text;
+  throw lastErr || new Error("Ningún modelo de Gemini respondió.");
 }
 
 async function extractTicket(imageBase64, mime) {
