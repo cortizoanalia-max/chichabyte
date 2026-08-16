@@ -242,6 +242,35 @@ async function airtableCreate(tableId, records) {
   return out;
 }
 
+async function handleDiag(req, res) {
+  const out = {
+    gemini_configurada: !!(CONFIG.GEMINI_API_KEY && !CONFIG.GEMINI_API_KEY.startsWith("PEGA_ACA")),
+    airtable_base_id: CONFIG.AIRTABLE_BASE_ID,
+  };
+
+  const t = CONFIG.AIRTABLE_TOKEN || "";
+  out.airtable_token_presente = !!(t && !t.startsWith("PEGA_ACA"));
+  out.airtable_token_largo = t.length;
+  out.airtable_token_empieza_con = t ? t.slice(0, 4) + "..." : "(vacío)";
+  out.airtable_token_formato_valido = /^pat[A-Za-z0-9._-]+$/.test(t);
+
+  if (out.airtable_token_presente) {
+    try {
+      const r = await fetch("https://api.airtable.com/v0/meta/whoami", {
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      const data = await r.json();
+      out.airtable_prueba_en_vivo = r.ok
+        ? { ok: true, usuario: data }
+        : { ok: false, status: r.status, error: data?.error?.message || data };
+    } catch (e) {
+      out.airtable_prueba_en_vivo = { ok: false, error: e.message };
+    }
+  }
+
+  sendJSON(res, 200, out);
+}
+
 // ------------------------------------------------------------------ rutas
 
 async function handleAnalyze(req, res) {
@@ -318,6 +347,7 @@ const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "POST" && req.url === "/api/analyze") return await handleAnalyze(req, res);
     if (req.method === "POST" && req.url === "/api/save") return await handleSave(req, res);
+    if (req.method === "GET" && req.url === "/api/diag") return await handleDiag(req, res);
 
     let filePath = path.join(__dirname, "public", req.url === "/" ? "index.html" : req.url);
     if (!filePath.startsWith(path.join(__dirname, "public"))) return sendJSON(res, 403, { error: "Prohibido" });
